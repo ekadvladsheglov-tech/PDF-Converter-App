@@ -1,6 +1,14 @@
+# Виртуальное окружение
 venv/
+
+# Результаты сборки
 build/
 dist/
+temp_setup/
+Output/
 *.spec
+
+# Python кэш
 __pycache__/
 *.pyc
+*.pyo
