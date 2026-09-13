@@ -1,0 +1,7 @@
+customtkinter
+pdf2docx
+python-docx
+PyPDF2
+fpdf2
+numpy<2.0
+pyinstaller
