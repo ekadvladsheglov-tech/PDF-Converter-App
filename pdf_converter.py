@@ -111,16 +111,26 @@ class PDFConverterApp(ctk.CTk):
             doc = Document(word_path)
             pdf = FPDF()
             pdf.add_page()
-            # Пытаемся загрузить шрифт с кириллицей, если он лежит рядом
+            
+            # Ищем шрифт с поддержкой кириллицы
             font_path = get_resource_path("DejaVuSans.ttf")
+            
             if os.path.exists(font_path):
+                # Регистрируем Unicode шрифт
                 pdf.add_font("DejaVu", "", font_path, uni=True)
                 pdf.set_font("DejaVu", size=12)
             else:
-                pdf.set_font("Arial", size=12) # Без кириллицы
+                # Если шрифта нет, используем стандартный (только английский)
+                messagebox.showwarning("Внимание", "Файл DejaVuSans.ttf не найден!\nРусский текст может не отобразиться.")
+                pdf.set_font("Helvetica", size=12)
             
             for para in doc.paragraphs:
-                pdf.multi_cell(0, 10, txt=para.text)
+                # fpdf2 сам работает с Unicode, encode больше не нужен!
+                if para.text.strip():  # Пропускаем пустые абзацы, чтобы не ломать верстку
+                    pdf.multi_cell(0, 7, txt=para.text)
+                else:
+                    pdf.ln(5) # Отступ для пустых строк
+                    
             pdf.output(pdf_path)
             messagebox.showinfo("Успех", f"Текст из Word сохранен в PDF:\n{pdf_path}")
         except Exception as e:

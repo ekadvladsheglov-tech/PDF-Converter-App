@@ -47,7 +47,7 @@ python -m pip install "numpy<2.0" >nul 2>&1
 
 :: ШАГ 4: СБОРКА EXE
 echo [Step 4/7] Building EXE...
-pyinstaller --noconsole --onefile --name "PDF_Converter" --hidden-import=fpdf --collect-all numpy pdf_converter.py
+pyinstaller --noconsole --onefile --name "PDF_Converter" --hidden-import=fpdf --collect-all numpy --add-data "DejaVuSans.ttf;." pdf_converter.py
 if not exist "dist\PDF_Converter.exe" (
     color 0C & echo ERROR: PyInstaller failed! & pause & exit /b
 )
