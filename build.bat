@@ -1,9 +1,9 @@
 @echo off
-title PDF Setup Builder
+title PDF Setup Builder v2.0
 color 0E
 
 echo ==========================================
-echo PDF CONVERTER SETUP BUILDER
+echo PDF CONVERTER SETUP BUILDER v2.0
 echo ==========================================
 echo.
 
@@ -39,15 +39,16 @@ echo [Step 2/7] Creating VENV...
 python -m venv venv
 call venv\Scripts\activate.bat
 
-:: ШАГ 3: БИБЛИОТЕКИ
+:: ШАГ 3: БИБЛИОТЕКИ (добавлены Pillow, PyMuPDF, tkinterdnd2)
 echo [Step 3/7] Installing libraries...
 python -m pip install --upgrade pip >nul 2>&1
-python -m pip install customtkinter pdf2docx python-docx PyPDF2 fpdf2 pyinstaller >nul 2>&1
+python -m pip install customtkinter pdf2docx python-docx PyPDF2 reportlab Pillow PyMuPDF pyinstaller >nul 2>&1
+python -m pip install tkinterdnd2 >nul 2>&1
 python -m pip install "numpy<2.0" >nul 2>&1
 
 :: ШАГ 4: СБОРКА EXE
 echo [Step 4/7] Building EXE...
-pyinstaller --noconsole --onefile --name "PDF_Converter" --hidden-import=fpdf --collect-all numpy --add-data "DejaVuSans.ttf;." pdf_converter.py
+pyinstaller --noconsole --onefile --name "PDF_Converter" --collect-all numpy --collect-all tkinterdnd2 --add-data "DejaVuSans.ttf;." pdf_converter.py
 if not exist "dist\PDF_Converter.exe" (
     color 0C & echo ERROR: PyInstaller failed! & pause & exit /b
 )
@@ -68,16 +69,16 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-:: ШАГ 7: ПЕЕНОС НА РАБОЧИЙ СТОЛ
+:: ШАГ 7: ПЕРЕНОС НА РАБОЧИЙ СТОЛ
 echo [Step 7/7] Moving to Desktop...
 if exist "Output\PDF_Converter_Setup_v1.0.0.exe" (
     copy /Y "Output\PDF_Converter_Setup_v1.0.0.exe" "%USERPROFILE%\Desktop\PDF_Converter_Setup.exe" >nul
-    
+
     rmdir /s /q build
     rmdir /s /q dist
     rmdir /s /q venv
     rmdir /s /q temp_setup
-    
+
     color 0A
     echo.
     echo ==========================================

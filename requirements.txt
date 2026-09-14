@@ -2,6 +2,9 @@ customtkinter
 pdf2docx
 python-docx
 PyPDF2
-fpdf2
+reportlab
 numpy<2.0
 pyinstaller
+Pillow
+PyMuPDF
+tkinterdnd2
