@@ -1,9 +1,11 @@
 @echo off
-title PDF Setup Builder v2.0
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
+title PDF Setup Builder v3.1
 color 0E
 
 echo ==========================================
-echo PDF CONVERTER SETUP BUILDER v2.0
+echo PDF CONVERTER SETUP BUILDER v3.1
 echo ==========================================
 echo.
 
@@ -23,6 +25,15 @@ if not exist "setup_script.iss" (
     color 0C & echo ERROR: setup_script.iss not found! & pause & exit /b
 )
 
+if not exist "app_web.py" (
+    color 0C & echo ERROR: app_web.py not found! & pause & exit /b
+)
+
+if not exist "DejaVuSans.ttf" (
+    color 0E & echo WARNING: DejaVuSans.ttf not found! Cyrillic in Word-to-PDF may break.
+    echo Press any key to continue without it... & pause >nul
+)
+
 echo [OK] All checks passed.
 echo.
 
@@ -33,51 +44,71 @@ if exist "dist" rmdir /s /q dist
 if exist "venv" rmdir /s /q venv
 if exist "temp_setup" rmdir /s /q temp_setup
 if exist "Output" rmdir /s /q Output
+if exist "pip_log.txt" del /q pip_log.txt
+if exist "build_log.txt" del /q build_log.txt
+if exist "inno_log.txt" del /q inno_log.txt
 
 :: ШАГ 2: VENV
 echo [Step 2/7] Creating VENV...
 python -m venv venv
+if %errorlevel% neq 0 (
+    color 0C & echo ERROR: Failed to create VENV! & pause & exit /b
+)
 call venv\Scripts\activate.bat
 
-:: ШАГ 3: БИБЛИОТЕКИ (добавлены Pillow, PyMuPDF, tkinterdnd2)
+:: ШАГ 3: БИБЛИОТЕКИ + ИКОНКА
 echo [Step 3/7] Installing libraries...
-python -m pip install --upgrade pip >nul 2>&1
-python -m pip install customtkinter pdf2docx python-docx PyPDF2 reportlab Pillow PyMuPDF pyinstaller >nul 2>&1
-python -m pip install tkinterdnd2 >nul 2>&1
-python -m pip install "numpy<2.0" >nul 2>&1
+python -m pip install --upgrade pip > pip_log.txt 2>&1
+python -m pip install -r requirements.txt >> pip_log.txt 2>&1
+if %errorlevel% neq 0 (
+    color 0C & echo ERROR: pip install failed! See pip_log.txt for details. & pause & exit /b
+)
+if not exist "pdf.ico" (
+    echo [Step 3/7] Generating pdf.ico...
+    python make_icon.py
+)
 
 :: ШАГ 4: СБОРКА EXE
 echo [Step 4/7] Building EXE...
-pyinstaller --noconsole --onefile --name "PDF_Converter" --collect-all numpy --collect-all tkinterdnd2 --add-data "DejaVuSans.ttf;." pdf_converter.py
+if exist "pdf.ico" (
+    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." --add-data "pdf.ico;." --icon "pdf.ico" app_web.py > build_log.txt 2>&1
+) else (
+    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." app_web.py > build_log.txt 2>&1
+)
+if %errorlevel% neq 0 (
+    color 0C & echo ERROR: PyInstaller failed! See build_log.txt for details. & pause & exit /b
+)
 if not exist "dist\PDF_Converter.exe" (
-    color 0C & echo ERROR: PyInstaller failed! & pause & exit /b
+    color 0C & echo ERROR: PDF_Converter.exe not created! See build_log.txt & pause & exit /b
 )
 
 :: ШАГ 5: ПОДГОТОВКА ФАЙЛОВ
 echo [Step 5/7] Preparing files...
 mkdir temp_setup >nul 2>&1
 copy /Y "dist\PDF_Converter.exe" "temp_setup\" >nul
-if exist "DejaVuSans.ttf" copy /Y "DejaVuSans.ttf" "temp_setup\" >nul
 
 :: ШАГ 6: КОМПИЛЯЦИЯ УСТАНОВЩИКА
 echo [Step 6/7] Compiling Setup.exe...
-"%INNOPATH%" setup_script.iss
+"%INNOPATH%" setup_script.iss > inno_log.txt 2>&1
 if %errorlevel% neq 0 (
-    color 0C
-    echo ERROR: Inno Setup failed!
-    pause
-    exit /b
+    color 0C & echo ERROR: Inno Setup failed! See inno_log.txt & pause & exit /b
 )
 
 :: ШАГ 7: ПЕРЕНОС НА РАБОЧИЙ СТОЛ
 echo [Step 7/7] Moving to Desktop...
-if exist "Output\PDF_Converter_Setup_v1.0.0.exe" (
-    copy /Y "Output\PDF_Converter_Setup_v1.0.0.exe" "%USERPROFILE%\Desktop\PDF_Converter_Setup.exe" >nul
+set "SETUPFILE="
+for %%f in ("Output\*.exe") do set "SETUPFILE=%%f"
+
+if defined SETUPFILE (
+    copy /Y "!SETUPFILE!" "%USERPROFILE%\Desktop\PDF_Converter_Setup.exe" >nul
 
     rmdir /s /q build
     rmdir /s /q dist
     rmdir /s /q venv
     rmdir /s /q temp_setup
+    if exist "pip_log.txt" del /q pip_log.txt
+    if exist "build_log.txt" del /q build_log.txt
+    if exist "inno_log.txt" del /q inno_log.txt
 
     color 0A
     echo.
@@ -86,7 +117,7 @@ if exist "Output\PDF_Converter_Setup_v1.0.0.exe" (
     echo Setup.exe is on your Desktop!
     echo ==========================================
 ) else (
-    color 0C & echo ERROR: Output folder is empty!
+    color 0C & echo ERROR: No setup file found in Output folder! Check inno_log.txt
 )
 
 pause

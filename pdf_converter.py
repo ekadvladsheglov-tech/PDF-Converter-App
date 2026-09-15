@@ -1,6 +1,7 @@
 import os
 import sys
 import io
+import threading
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, simpledialog
 from pdf2docx import Converter
@@ -13,7 +14,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 from PIL import Image
 import fitz
-import threading
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -30,11 +30,39 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-ctk.set_appearance_mode("System")
-ctk.set_default_color_theme("blue")
-BaseWindow = TkinterDnD.Tk if HAS_DND else ctk.CTk
+# ==================== ДИЗАЙН-ТОКЕНЫ ====================
+COLORS = {
+    "bg_page": "#FFFFFF",
+    "bg_surface": "#F5F5F3",
+    "bg_card_light": "#ECECE9",
+    "bg_dark": "#171717",
+    "bg_dark_elev": "#2A2A2A",
+    "bg_dark_hover": "#3A3A3A",
+    "accent_coral": "#F2694B",
+    "accent_yellow": "#F2E500",
+    "success": "#2EBD59",
+    "text_primary": "#171717",
+    "text_secondary": "#8A8A86",
+    "text_on_dark": "#FFFFFF",
+    "text_on_dark_muted": "#9C9C99",
+}
+
+RADIUS = {
+    "container": 20,
+    "card": 16,
+    "pill": 999,
+    "button": 10,
+}
+
+FONT_FAMILY = "Segoe UI"
+FONT = (FONT_FAMILY, 10)
+FONT_BOLD = (FONT_FAMILY, 10, "bold")
+FONT_TITLE = (FONT_FAMILY, 16, "bold")
+FONT_SECTION = (FONT_FAMILY, 9, "bold")
+FONT_SMALL = (FONT_FAMILY, 9)
 
 
+# ==================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ====================
 class PageParser:
     @staticmethod
     def parse(text_input, total_pages):
@@ -66,10 +94,14 @@ class PageParser:
 
 class BatchProcessor:
     @staticmethod
-    def process_folder(input_folder, output_folder, file_ext, process_func, progress_callback):
+    def process_folder(input_folder, output_folder, file_ext, out_ext,
+                       process_func, progress_callback):
+        """ИСПРАВЛЕНО: расширение результата передаётся явно (out_ext),
+        вместо гадания по имени функции."""
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
-        files = [f for f in os.listdir(input_folder) if f.lower().endswith(file_ext)]
+        files = [f for f in os.listdir(input_folder)
+                 if f.lower().endswith(file_ext) and not f.startswith("~$")]
         total = len(files)
         if total == 0:
             return 0, 0
@@ -78,8 +110,7 @@ class BatchProcessor:
         for i, filename in enumerate(files):
             in_path = os.path.join(input_folder, filename)
             base_name = os.path.splitext(filename)[0]
-            out_ext = ".docx" if file_ext == ".pdf" and "word" in str(process_func.__name__).lower() else ".pdf"
-            out_path = os.path.join(output_folder, f"{base_name}{out_ext}")
+            out_path = os.path.join(output_folder, base_name + out_ext)
             try:
                 process_func(in_path, out_path)
                 success_count += 1
@@ -89,37 +120,83 @@ class BatchProcessor:
         return success_count, error_count
 
 
+def ensure_pdf_font():
+    """ИСПРАВЛЕНО: шрифт регистрируется ОДИН раз, иначе краш на пакете."""
+    try:
+        if 'DejaVu' in pdfmetrics.getRegisteredFontNames():
+            return 'DejaVu'
+        font_path = get_resource_path("DejaVuSans.ttf")
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            return 'DejaVu'
+    except Exception:
+        pass
+    return 'Helvetica'
+
+
+# ==================== ВЫБОР БАЗОВОГО ОКНА ====================
+ctk.set_appearance_mode("Light")
+
+# ИСПРАВЛЕНО: никакого множественного наследования.
+# Сначала "пробник": если tkdnd не загрузится (частый случай в PyInstaller),
+# молча откатываемся на чистый ctk.CTk без краха приложения.
+USE_DND = False
+BaseWindow = ctk.CTk
+if HAS_DND:
+    _probe = None
+    try:
+        _probe = TkinterDnD.Tk()
+        _probe.withdraw()
+        _probe.destroy()
+        BaseWindow = TkinterDnD.Tk
+        USE_DND = True
+    except Exception:
+        HAS_DND = False
+        if _probe is not None:
+            try:
+                _probe.destroy()
+            except Exception:
+                pass
+
+
+# ==================== ГЛАВНОЕ ОКНО ====================
 class PDFConverterApp(BaseWindow):
     def __init__(self):
         super().__init__()
         self.title("PDF Конвертер & Инструменты v3.0")
-        self.geometry("1050x720")
         self.resizable(False, False)
 
-        if HAS_DND:
-            self.drop_target_register(DND_FILES)
-            self.dnd_bind('<<Drop>>', self.on_files_dropped)
+        # ИСПРАВЛЕНО: у TkinterDnD.Tk нет fg_color, используем bg.
+        # geometry() работает у обеих баз, вызываем один раз.
+        if USE_DND:
+            self.configure(bg=COLORS["bg_page"])
+        else:
+            self.configure(fg_color=COLORS["bg_page"])
+        self.geometry("1000x650")
 
-        # Основной контейнер
-        main_container = ctk.CTkFrame(self, corner_radius=0)
-        main_container.pack(fill="both", expand=True)
+        if USE_DND:
+            try:
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind('<<Drop>>', self.on_files_dropped)
+            except Exception:
+                pass
+
+        main_container = ctk.CTkFrame(self, fg_color=COLORS["bg_surface"],
+                                      corner_radius=RADIUS["container"])
+        main_container.pack(fill="both", expand=True, padx=8, pady=8)
         main_container.grid_rowconfigure(0, weight=1)
         main_container.grid_columnconfigure(1, weight=1)
 
-        # Словари для хранения фреймов и кнопок меню
         self.frames = {}
         self.menu_buttons = {}
 
-        # Боковое меню
         self.create_sidebar(main_container)
 
-        # Область контента
-        self.content_area = ctk.CTkFrame(main_container, corner_radius=0)
-        self.content_area.grid(row=0, column=1, sticky="nsew")
+        self.content_area = ctk.CTkFrame(main_container, fg_color="transparent", corner_radius=0)
+        self.content_area.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
         self.content_area.grid_rowconfigure(0, weight=1)
         self.content_area.grid_columnconfigure(0, weight=1)
 
-        # Создаём все фреймы инструментов
         self.create_pdf_to_word_frame()
         self.create_word_to_pdf_frame()
         self.create_images_to_pdf_frame()
@@ -132,48 +209,57 @@ class PDFConverterApp(BaseWindow):
         self.create_delete_frame()
         self.create_numbers_frame()
 
-        # Размещаем все фреймы в одной позиции (для переключения через tkraise)
         for frame in self.frames.values():
             frame.grid(row=0, column=0, sticky="nsew")
 
-        # Показываем первый фрейм по умолчанию
         self.show_frame("pdf_to_word")
 
     # ==================== БОКОВОЕ МЕНЮ ====================
     def create_sidebar(self, parent):
-        sidebar = ctk.CTkFrame(parent, width=230, corner_radius=0)
-        sidebar.grid(row=0, column=0, sticky="nsw")
-        sidebar.grid_propagate(False)  # Фиксируем ширину
+        sidebar = ctk.CTkFrame(parent, width=200, fg_color=COLORS["bg_dark"],
+                               corner_radius=RADIUS["container"])
+        sidebar.grid(row=0, column=0, sticky="nsw", padx=8, pady=8)
+        sidebar.grid_propagate(False)
 
-        # Логотип / Заголовок
-        ctk.CTkLabel(sidebar, text="📄 PDF Конвертер", font=("Arial", 18, "bold")).pack(pady=(20, 5))
-        ctk.CTkLabel(sidebar, text="v3.0", font=("Arial", 11), text_color="gray").pack(pady=(0, 20))
+        header_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        header_frame.pack(fill="x", padx=15, pady=(15, 10))
 
-        # --- КАТЕГОРИЯ: КОНВЕРТАЦИЯ ---
-        ctk.CTkLabel(sidebar, text="КОНВЕРТАЦИЯ", font=("Arial", 11, "bold"), text_color="gray").pack(anchor="w", padx=15, pady=(10, 5))
-        
+        ctk.CTkLabel(header_frame, text="📄", font=(FONT_FAMILY, 22)).pack(side="left", padx=(0, 10))
+
+        title_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        title_frame.pack(side="left")
+        ctk.CTkLabel(title_frame, text="PDF Tools", font=FONT_TITLE,
+                     text_color=COLORS["text_on_dark"]).pack(anchor="w")
+        ctk.CTkLabel(title_frame, text="v3.0", font=FONT_SMALL,
+                     text_color=COLORS["text_on_dark_muted"]).pack(anchor="w")
+
+        self._add_section_label(sidebar, "КОНВЕРТАЦИЯ")
         self._add_menu_button(sidebar, "pdf_to_word", "PDF → Word", "🔄")
         self._add_menu_button(sidebar, "word_to_pdf", "Word → PDF", "🔄")
         self._add_menu_button(sidebar, "images_to_pdf", "Фото → PDF", "🖼")
 
-        # --- КАТЕГОРИЯ: ИНСТРУМЕНТЫ ---
-        ctk.CTkLabel(sidebar, text="ИНСТРУМЕНТЫ", font=("Arial", 11, "bold"), text_color="gray").pack(anchor="w", padx=15, pady=(15, 5))
-        
+        self._add_section_label(sidebar, "ИНСТРУМЕНТЫ")
         self._add_menu_button(sidebar, "split", "Разделить", "✂️")
         self._add_menu_button(sidebar, "merge", "Объединить", "🔗")
         self._add_menu_button(sidebar, "compress", "Сжать", "📉")
         self._add_menu_button(sidebar, "protect", "Пароль", "🛡")
 
-        # --- КАТЕГОРИЯ: СТРАНИЦЫ ---
-        ctk.CTkLabel(sidebar, text="СТРАНИЦЫ", font=("Arial", 11, "bold"), text_color="gray").pack(anchor="w", padx=15, pady=(15, 5))
-        
+        self._add_section_label(sidebar, "СТРАНИЦЫ")
         self._add_menu_button(sidebar, "extract", "Извлечь", "📑")
         self._add_menu_button(sidebar, "rotate", "Повернуть", "📐")
         self._add_menu_button(sidebar, "delete", "Удалить", "🗑")
         self._add_menu_button(sidebar, "numbers", "Номера", "🔢")
 
-        # Нижняя часть (инфо)
-        ctk.CTkLabel(sidebar, text="Локально • Безопасно", font=("Arial", 10), text_color="gray").pack(side="bottom", pady=15)
+        bottom_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        bottom_frame.pack(side="bottom", fill="x", padx=15, pady=15)
+        ctk.CTkLabel(bottom_frame, text="✓ Локально", font=FONT_SMALL,
+                     text_color=COLORS["success"]).pack(anchor="w")
+        ctk.CTkLabel(bottom_frame, text="✓ Безопасно", font=FONT_SMALL,
+                     text_color=COLORS["success"]).pack(anchor="w")
+
+    def _add_section_label(self, parent, text):
+        ctk.CTkLabel(parent, text=text, font=FONT_SECTION,
+                     text_color=COLORS["text_on_dark_muted"]).pack(anchor="w", padx=15, pady=(12, 4))
 
     def _add_menu_button(self, parent, frame_name, text, icon):
         btn = ctk.CTkButton(
@@ -181,54 +267,119 @@ class PDFConverterApp(BaseWindow):
             text=f"{icon}  {text}",
             anchor="w",
             fg_color="transparent",
-            text_color=("gray10", "gray90"),
-            hover_color=("gray75", "gray25"),
-            height=35,
+            text_color=COLORS["text_on_dark"],
+            hover_color=COLORS["bg_dark_hover"],
+            height=32,
+            corner_radius=RADIUS["button"],
+            font=FONT,
             command=lambda fn=frame_name: self.show_frame(fn)
         )
-        btn.pack(fill="x", padx=10, pady=1)
+        btn.pack(fill="x", padx=8, pady=1)
         self.menu_buttons[frame_name] = btn
 
     def show_frame(self, frame_name):
-        """Переключает видимый фрейм и подсвечивает активную кнопку."""
-        # Сбрасываем подсветку всех кнопок
         for btn in self.menu_buttons.values():
-            btn.configure(fg_color="transparent", text_color=("gray10", "gray90"))
-        
-        # Подсвечиваем активную кнопку
-        self.menu_buttons[frame_name].configure(fg_color="#3B8ED0", text_color="white")
-        
-        # Показываем нужный фрейм
+            btn.configure(fg_color="transparent", text_color=COLORS["text_on_dark"])
+        self.menu_buttons[frame_name].configure(fg_color=COLORS["accent_coral"], text_color="white")
         self.frames[frame_name].tkraise()
 
-    # ==================== ФРЕЙМ: PDF -> WORD ====================
+    # ==================== ОБЩИЕ ВИДЖЕТЫ ====================
+    def _create_content_frame(self, title, subtitle=""):
+        frame = ctk.CTkFrame(self.content_area, fg_color=COLORS["bg_card_light"],
+                             corner_radius=RADIUS["card"])
+        header = ctk.CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(15, 12))
+        ctk.CTkLabel(header, text=title, font=FONT_TITLE,
+                     text_color=COLORS["text_primary"]).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(header, text=subtitle, font=FONT_SMALL,
+                         text_color=COLORS["text_secondary"]).pack(side="left", padx=(10, 0))
+        return frame
+
+    def _create_pill_button(self, parent, text, command,
+                            color=COLORS["accent_coral"], width=180, height=34):
+        return ctk.CTkButton(
+            parent, text=text, command=command,
+            fg_color=color, hover_color=self._darken_color(color),
+            height=height, width=width,
+            corner_radius=RADIUS["pill"], font=FONT_BOLD
+        )
+
+    def _create_entry(self, parent, width=500, placeholder="", height=36):
+        return ctk.CTkEntry(
+            parent, width=width, height=height,
+            corner_radius=RADIUS["pill"],
+            fg_color=COLORS["bg_page"],
+            border_color=COLORS["text_secondary"],
+            border_width=1, font=FONT,
+            placeholder_text=placeholder,
+            text_color=COLORS["text_primary"]
+        )
+
+    def _create_segmented_button(self, parent, values, command):
+        return ctk.CTkSegmentedButton(
+            parent, values=values, command=command,
+            fg_color=COLORS["bg_page"],
+            selected_color=COLORS["accent_coral"],
+            selected_hover_color=self._darken_color(COLORS["accent_coral"]),
+            unselected_color=COLORS["bg_card_light"],
+            height=32, corner_radius=RADIUS["pill"], font=FONT
+        )
+
+    def _create_info_bar(self, frame, text):
+        info_frame = ctk.CTkFrame(frame, fg_color=COLORS["bg_page"], corner_radius=RADIUS["button"])
+        info_frame.pack(fill="x", padx=20, pady=(15, 15))
+        ctk.CTkLabel(info_frame, text=text, font=FONT_SMALL,
+                     text_color=COLORS["text_secondary"]).pack(padx=12, pady=8, anchor="w")
+
+    def _darken_color(self, hex_color, factor=0.85):
+        hex_color = hex_color.lstrip('#')
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+        r, g, b = int(r * factor), int(g * factor), int(b * factor)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    # ==================== PDF -> WORD ====================
     def create_pdf_to_word_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("PDF → Word", "Конвертация документов")
         self.frames["pdf_to_word"] = frame
 
-        ctk.CTkLabel(frame, text="Конвертация PDF в Word", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        
-        self.mode_p2w = ctk.CTkSegmentedButton(frame, values=["Один файл", "Вся папка"], command=self.toggle_p2w_mode)
-        self.mode_p2w.pack(pady=5)
+        top_bar = ctk.CTkFrame(frame, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=(0, 10))
+        ctk.CTkLabel(top_bar, text="Режим:", font=FONT,
+                     text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 10))
+        self.mode_p2w = self._create_segmented_button(top_bar, ["Один файл", "Вся папка"], self.toggle_p2w_mode)
+        self.mode_p2w.pack(side="left")
         self.mode_p2w.set("Один файл")
 
-        self.entry_p2w = ctk.CTkEntry(frame, width=600, placeholder_text="Выберите файл или папку...")
-        self.entry_p2w.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=self.browse_p2w).pack(pady=5)
-        ctk.CTkButton(frame, text="Конвертировать", command=self.start_p2w, fg_color="green", hover_color="darkgreen", height=40, width=200).pack(pady=15)
+        self.entry_p2w = self._create_entry(frame, placeholder="Выберите файл или папку...")
+        self.entry_p2w.pack(pady=(0, 8), padx=20, fill="x")
 
-        self.progress_p2w = ctk.CTkProgressBar(frame, width=600)
-        self.progress_p2w.pack(pady=5)
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", self.browse_p2w, COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🚀 Конвертировать", self.start_p2w, COLORS["accent_coral"], 170).pack(side="left", padx=5)
+
+        self.progress_p2w = ctk.CTkProgressBar(frame, width=460, height=6,
+                                               corner_radius=RADIUS["pill"],
+                                               progress_color=COLORS["accent_coral"])
+        self.progress_p2w.pack(pady=(0, 6))
         self.progress_p2w.set(0)
-        self.label_status_p2w = ctk.CTkLabel(frame, text="")
-        self.label_status_p2w.pack(pady=5)
+
+        self.label_status_p2w = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                             text_color=COLORS["text_secondary"])
+        self.label_status_p2w.pack()
+
+        self._create_info_bar(frame, "💡 Поддерживает пакетную обработку нескольких файлов")
 
     def toggle_p2w_mode(self, value):
         self.entry_p2w.delete(0, "end")
         self.entry_p2w.configure(placeholder_text="Выберите папку..." if value == "Вся папка" else "Выберите файл...")
 
     def browse_p2w(self):
-        path = filedialog.askopenfilename(filetypes=[("PDF файлы", "*.pdf")]) if self.mode_p2w.get() == "Один файл" else filedialog.askdirectory(title="Выберите папку с PDF файлами")
+        if self.mode_p2w.get() == "Один файл":
+            path = filedialog.askopenfilename(filetypes=[("PDF файлы", "*.pdf")])
+        else:
+            path = filedialog.askdirectory(title="Выберите папку с PDF файлами")
         if path:
             self.entry_p2w.delete(0, "end")
             self.entry_p2w.insert(0, path)
@@ -240,14 +391,16 @@ class PDFConverterApp(BaseWindow):
             return
         if self.mode_p2w.get() == "Один файл":
             out_path = filedialog.asksaveasfilename(defaultextension=".docx", filetypes=[("Word файлы", "*.docx")])
-            if not out_path: return
-            self.label_status_p2w.configure(text="Конвертация...")
+            if not out_path:
+                return
+            self.label_status_p2w.configure(text="⏳ Конвертация...")
             self.progress_p2w.set(0.5)
             threading.Thread(target=self._run_single_p2w, args=(path, out_path), daemon=True).start()
         else:
             out_dir = filedialog.askdirectory(title="Куда сохранить результаты?")
-            if not out_dir: return
-            self.label_status_p2w.configure(text="Пакетная обработка...")
+            if not out_dir:
+                return
+            self.label_status_p2w.configure(text="⏳ Пакетная обработка...")
             self.progress_p2w.set(0)
             threading.Thread(target=self._run_batch_p2w, args=(path, out_dir), daemon=True).start()
 
@@ -260,83 +413,104 @@ class PDFConverterApp(BaseWindow):
         try:
             self._single_p2w_logic(in_path, out_path)
             self.after(0, lambda: self.progress_p2w.set(1.0))
-            self.after(0, lambda: self.label_status_p2w.configure(text="Успешно!"))
-            self.after(0, lambda: messagebox.showinfo("Успех", f"Сохранено:\n{out_path}"))
+            self.after(0, lambda: self.label_status_p2w.configure(text="✓ Успешно!", text_color=COLORS["success"]))
+            self.after(0, lambda p=out_path: messagebox.showinfo("Успех", f"Сохранено:\n{p}"))
         except Exception as e:
-            self.after(0, lambda: self.label_status_p2w.configure(text="Ошибка!"))
-            self.after(0, lambda: messagebox.showerror("Ошибка", str(e)))
+            err_text = str(e)  # ИСПРАВЛЕНО: копируем до выхода из except
+            self.after(0, lambda: self.label_status_p2w.configure(text="✗ Ошибка!", text_color=COLORS["accent_coral"]))
+            self.after(0, lambda t=err_text: messagebox.showerror("Ошибка", t))
 
     def _run_batch_p2w(self, in_dir, out_dir):
         def update_progress(current, total, filename):
-            self.after(0, lambda p=current/total, c=current, t=total, f=filename: self._update_batch_ui_p2w(p, c, t, f))
-        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".pdf", self._single_p2w_logic, update_progress)
+            self.after(0, lambda p=current/total, c=current, t=total, f=filename:
+                       self._update_batch_ui_p2w(p, c, t, f))
+        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".pdf", ".docx",
+                                                        self._single_p2w_logic, update_progress)
         self.after(0, lambda s=success, e=errors, d=out_dir: self._finish_batch_p2w(s, e, d))
 
     def _update_batch_ui_p2w(self, percent, current, total, filename):
         self.progress_p2w.set(percent)
-        self.label_status_p2w.configure(text=f"Файл {current} из {total}: {filename}")
+        self.label_status_p2w.configure(text=f"📄 Файл {current}/{total}: {filename}")
 
     def _finish_batch_p2w(self, success, errors, out_dir):
         self.progress_p2w.set(1.0)
-        self.label_status_p2w.configure(text=f"Готово! Успешно: {success}, Ошибок: {errors}")
-        messagebox.showinfo("Пакетная обработка", f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
+        self.label_status_p2w.configure(text=f"✓ Готово! Успешно: {success}, Ошибок: {errors}",
+                                        text_color=COLORS["success"])
+        messagebox.showinfo("Пакетная обработка",
+                            f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
 
-    # ==================== ФРЕЙМ: WORD -> PDF ====================
+    # ==================== WORD -> PDF ====================
     def create_word_to_pdf_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Word → PDF", "Конвертация документов")
         self.frames["word_to_pdf"] = frame
 
-        ctk.CTkLabel(frame, text="Конвертация Word в PDF", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        
-        self.mode_w2p = ctk.CTkSegmentedButton(frame, values=["Один файл", "Вся папка"], command=self.toggle_w2p_mode)
-        self.mode_w2p.pack(pady=5)
+        top_bar = ctk.CTkFrame(frame, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=(0, 10))
+        ctk.CTkLabel(top_bar, text="Режим:", font=FONT,
+                     text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 10))
+        self.mode_w2p = self._create_segmented_button(top_bar, ["Один файл", "Вся папка"], self.toggle_w2p_mode)
+        self.mode_w2p.pack(side="left")
         self.mode_w2p.set("Один файл")
 
-        self.entry_w2p = ctk.CTkEntry(frame, width=600, placeholder_text="Выберите файл или папку...")
-        self.entry_w2p.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=self.browse_w2p).pack(pady=5)
-        ctk.CTkButton(frame, text="Конвертировать", command=self.start_w2p, fg_color="green", hover_color="darkgreen", height=40, width=200).pack(pady=15)
+        self.entry_w2p = self._create_entry(frame, placeholder="Выберите файл или папку...")
+        self.entry_w2p.pack(pady=(0, 8), padx=20, fill="x")
 
-        self.progress_w2p = ctk.CTkProgressBar(frame, width=600)
-        self.progress_w2p.pack(pady=5)
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", self.browse_w2p, COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🚀 Конвертировать", self.start_w2p, COLORS["accent_coral"], 170).pack(side="left", padx=5)
+
+        self.progress_w2p = ctk.CTkProgressBar(frame, width=460, height=6,
+                                               corner_radius=RADIUS["pill"],
+                                               progress_color=COLORS["accent_coral"])
+        self.progress_w2p.pack(pady=(0, 6))
+        self.progress_w2w = self.progress_w2p
         self.progress_w2p.set(0)
-        self.label_status_w2p = ctk.CTkLabel(frame, text="")
-        self.label_status_w2p.pack(pady=5)
+
+        self.label_status_w2p = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                             text_color=COLORS["text_secondary"])
+        self.label_status_w2p.pack()
+
+        self._create_info_bar(frame, "💡 Сохраняет структуру текста документа")
 
     def toggle_w2p_mode(self, value):
         self.entry_w2p.delete(0, "end")
         self.entry_w2p.configure(placeholder_text="Выберите папку..." if value == "Вся папка" else "Выберите файл...")
 
     def browse_w2p(self):
-        path = filedialog.askopenfilename(filetypes=[("Word файлы", "*.docx")]) if self.mode_w2p.get() == "Один файл" else filedialog.askdirectory(title="Выберите папку с Word файлами")
+        if self.mode_w2p.get() == "Один файл":
+            path = filedialog.askopenfilename(filetypes=[("Word файлы", "*.docx")])
+        else:
+            path = filedialog.askdirectory(title="Выберите папку с Word файлами")
         if path:
             self.entry_w2p.delete(0, "end")
-            self.entry_w2p.insert(0, path)
+            self.entry_w2w.insert(0, path)
 
     def start_w2p(self):
-        path = self.entry_w2p.get()
+        path = self.entry_w2w.get()
         if not path or not os.path.exists(path):
             messagebox.showerror("Ошибка", "Путь не выбран!")
             return
         if self.mode_w2p.get() == "Один файл":
             out_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF файлы", "*.pdf")])
-            if not out_path: return
+            if not out_path:
+                return
+            self.label_status_w2p.configure(text="⏳ Конвертация...")
+            self.progress_w2p.set(0.5)
             threading.Thread(target=self._run_single_w2p, args=(path, out_path), daemon=True).start()
         else:
             out_dir = filedialog.askdirectory(title="Куда сохранить результаты?")
-            if not out_dir: return
+            if not out_dir:
+                return
+            self.label_status_w2p.configure(text="⏳ Пакетная обработка...")
+            self.progress_w2p.set(0)
             threading.Thread(target=self._run_batch_w2p, args=(path, out_dir), daemon=True).start()
 
     def _single_w2p_logic(self, word_path, pdf_path):
         doc = Document(word_path)
         c = canvas.Canvas(pdf_path, pagesize=A4)
         width, height = A4
-        font_path = get_resource_path("DejaVuSans.ttf")
-        if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
-            font_name = 'DejaVu'
-        else:
-            font_name = 'Helvetica'
+        font_name = ensure_pdf_font()
         font_size = 12
         x = 20 * mm
         y = height - (20 * mm)
@@ -397,51 +571,60 @@ class PDFConverterApp(BaseWindow):
 
     def _run_single_w2p(self, in_path, out_path):
         try:
-            self.after(0, lambda: self.label_status_w2p.configure(text="Конвертация..."))
-            self.after(0, lambda: self.progress_w2p.set(0.5))
             self._single_w2p_logic(in_path, out_path)
             self.after(0, lambda: self.progress_w2p.set(1.0))
-            self.after(0, lambda: self.label_status_w2p.configure(text="Успешно!"))
-            self.after(0, lambda: messagebox.showinfo("Успех", f"Сохранено:\n{out_path}"))
+            self.after(0, lambda: self.label_status_w2p.configure(text="✓ Успешно!", text_color=COLORS["success"]))
+            self.after(0, lambda p=out_path: messagebox.showinfo("Успех", f"Сохранено:\n{p}"))
         except Exception as e:
-            self.after(0, lambda: self.label_status_w2p.configure(text="Ошибка!"))
-            self.after(0, lambda: messagebox.showerror("Ошибка", str(e)))
+            err_text = str(e)
+            self.after(0, lambda: self.label_status_w2p.configure(text="✗ Ошибка!", text_color=COLORS["accent_coral"]))
+            self.after(0, lambda t=err_text: messagebox.showerror("Ошибка", t))
 
     def _run_batch_w2p(self, in_dir, out_dir):
         def update_progress(current, total, filename):
-            self.after(0, lambda p=current/total, c=current, t=total, f=filename: self._update_batch_ui_w2p(p, c, t, f))
-        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".docx", self._single_w2p_logic, update_progress)
+            self.after(0, lambda p=current/total, c=current, t=total, f=filename:
+                       self._update_batch_ui_w2p(p, c, t, f))
+        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".docx", ".pdf",
+                                                        self._single_w2p_logic, update_progress)
         self.after(0, lambda s=success, e=errors, d=out_dir: self._finish_batch_w2p(s, e, d))
 
     def _update_batch_ui_w2p(self, percent, current, total, filename):
         self.progress_w2p.set(percent)
-        self.label_status_w2p.configure(text=f"Файл {current} из {total}: {filename}")
+        self.label_status_w2p.configure(text=f"📄 Файл {current}/{total}: {filename}")
 
     def _finish_batch_w2p(self, success, errors, out_dir):
         self.progress_w2p.set(1.0)
-        self.label_status_w2p.configure(text=f"Готово! Успешно: {success}, Ошибок: {errors}")
-        messagebox.showinfo("Пакетная обработка", f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
+        self.label_status_w2w.configure(text=f"✓ Готово! Успешно: {success}, Ошибок: {errors}",
+                                        text_color=COLORS["success"])
+        messagebox.showinfo("Пакетная обработка",
+                            f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
 
-    # ==================== ФРЕЙМ: ФОТО -> PDF ====================
+    # ==================== ФОТО -> PDF ====================
     def create_images_to_pdf_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Фото → PDF", "Создание PDF из изображений")
         self.frames["images_to_pdf"] = frame
 
-        ctk.CTkLabel(frame, text="Создание PDF из изображений", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        
-        self.listbox_images = ctk.CTkTextbox(frame, width=600, height=220)
-        self.listbox_images.pack(pady=5)
-        self.listbox_images.configure(state="disabled")
         self.image_files = []
+        self.listbox_images = ctk.CTkTextbox(
+            frame, height=180,
+            fg_color=COLORS["bg_page"],
+            border_color=COLORS["text_secondary"],
+            border_width=1,
+            corner_radius=RADIUS["card"],
+            font=FONT, text_color=COLORS["text_primary"]
+        )
+        self.listbox_images.pack(pady=(0, 10), padx=20, fill="x")
+        self.listbox_images.configure(state="disabled")
 
-        frame_btns = ctk.CTkFrame(frame, fg_color="transparent")
-        frame_btns.pack(pady=10)
-        ctk.CTkButton(frame_btns, text="Добавить изображения", command=self.add_image_files).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(frame_btns, text="Очистить список", command=self.clear_image_files, fg_color="red").grid(row=0, column=1, padx=5)
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 10))
+        self._create_pill_button(btn_frame, "➕ Добавить", self.add_image_files, COLORS["accent_yellow"], 140).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🗑 Очистить", self.clear_image_files, COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🚀 Создать PDF", self.images_to_pdf, COLORS["accent_coral"], 150).pack(side="left", padx=5)
 
-        ctk.CTkButton(frame, text="Создать PDF", command=self.images_to_pdf, fg_color="blue", hover_color="darkblue", height=40, width=200).pack(pady=15)
-        self.label_status_images = ctk.CTkLabel(frame, text="")
-        self.label_status_images.pack(pady=5)
+        self.label_status_images = ctk.CTkLabel(frame, text="Добавьте изображения для создания PDF",
+                                                font=FONT_SMALL, text_color=COLORS["text_secondary"])
+        self.label_status_images.pack(pady=(5, 15))
 
     def add_image_files(self):
         filenames = filedialog.askopenfilenames(filetypes=[("Изображения", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff")])
@@ -459,6 +642,9 @@ class PDFConverterApp(BaseWindow):
         for f in self.image_files:
             self.listbox_images.insert("end", f + "\n")
         self.listbox_images.configure(state="disabled")
+        count = len(self.image_files)
+        self.label_status_images.configure(
+            text=f"Добавлено файлов: {count}" if count > 0 else "Добавьте изображения для создания PDF")
 
     def images_to_pdf(self):
         if not self.image_files:
@@ -475,24 +661,30 @@ class PDFConverterApp(BaseWindow):
                     img = img.convert('RGB')
                 images.append(img)
             images[0].save(pdf_path, "PDF", save_all=True, append_images=images[1:], resolution=150)
-            self.label_status_images.configure(text=f"Создан PDF из {len(images)} изображений!")
+            self.label_status_images.configure(text=f"✓ Создан PDF из {len(images)} изображений!",
+                                               text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"Создан PDF из {len(images)} изображений!")
             self.clear_image_files()
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: РАЗДЕЛИТЬ ====================
+    # ==================== РАЗДЕЛИТЬ ====================
     def create_split_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Разделить PDF", "Разделение на страницы")
         self.frames["split"] = frame
 
-        ctk.CTkLabel(frame, text="Разделение PDF на страницы", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_split = ctk.CTkEntry(frame, width=600)
-        self.entry_split.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_split)).pack(pady=5)
-        ctk.CTkButton(frame, text="Разделить", command=self.split_pdf, fg_color="orange", hover_color="darkorange", height=40, width=200).pack(pady=15)
-        self.label_status_3 = ctk.CTkLabel(frame, text="")
-        self.label_status_3.pack(pady=5)
+        self.entry_split = self._create_entry(frame)
+        self.entry_split.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", lambda: self._browse_generic(self.entry_split), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "✂️ Разделить", self.split_pdf, COLORS["accent_yellow"], 140).pack(side="left", padx=5)
+
+        self.label_status_3 = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                           text_color=COLORS["text_secondary"])
+        self.label_status_3.pack(pady=(5, 15))
+        self._create_info_bar(frame, "💡 Каждая страница сохранится отдельным файлом")
 
     def split_pdf(self):
         pdf_path = self.entry_split.get()
@@ -510,30 +702,38 @@ class PDFConverterApp(BaseWindow):
                 writer.add_page(page)
                 with open(os.path.join(output_dir, f"{base_name}_page_{i + 1}.pdf"), "wb") as f:
                     writer.write(f)
-            self.label_status_3.configure(text=f"Создано {len(reader.pages)} файлов.")
+            self.label_status_3.configure(text=f"✓ Создано {len(reader.pages)} файлов.",
+                                          text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"PDF разделен на {len(reader.pages)} страниц.")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: ОБЪЕДИНИТЬ ====================
+    # ==================== ОБЪЕДИНИТЬ ====================
     def create_merge_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Объединить PDF", "Объединение файлов")
         self.frames["merge"] = frame
 
-        ctk.CTkLabel(frame, text="Объединение PDF файлов", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.listbox_merge = ctk.CTkTextbox(frame, width=600, height=220)
-        self.listbox_merge.pack(pady=5)
-        self.listbox_merge.configure(state="disabled")
         self.merge_files = []
+        self.listbox_merge = ctk.CTkTextbox(
+            frame, height=180,
+            fg_color=COLORS["bg_page"],
+            border_color=COLORS["text_secondary"],
+            border_width=1,
+            corner_radius=RADIUS["card"],
+            font=FONT, text_color=COLORS["text_primary"]
+        )
+        self.listbox_merge.pack(pady=(0, 10), padx=20, fill="x")
+        self.listbox_merge.configure(state="disabled")
 
-        frame_btns = ctk.CTkFrame(frame, fg_color="transparent")
-        frame_btns.pack(pady=10)
-        ctk.CTkButton(frame_btns, text="Добавить файлы", command=self.add_merge_files).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(frame_btns, text="Очистить список", command=self.clear_merge_files, fg_color="red").grid(row=0, column=1, padx=5)
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 10))
+        self._create_pill_button(btn_frame, "➕ Добавить", self.add_merge_files, COLORS["accent_yellow"], 140).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🗑 Очистить", self.clear_merge_files, COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🔗 Объединить", self.merge_pdfs, COLORS["accent_coral"], 150).pack(side="left", padx=5)
 
-        ctk.CTkButton(frame, text="Объединить", command=self.merge_pdfs, fg_color="purple", hover_color="darkviolet", height=40, width=200).pack(pady=15)
-        self.label_status_4 = ctk.CTkLabel(frame, text="")
-        self.label_status_4.pack(pady=5)
+        self.label_status_4 = ctk.CTkLabel(frame, text="Добавьте минимум 2 файла",
+                                           font=FONT_SMALL, text_color=COLORS["text_secondary"])
+        self.label_status_4.pack(pady=(5, 15))
 
     def add_merge_files(self):
         filenames = filedialog.askopenfilenames(filetypes=[("PDF файлы", "*.pdf")])
@@ -551,6 +751,8 @@ class PDFConverterApp(BaseWindow):
         for f in self.merge_files:
             self.listbox_merge.insert("end", f + "\n")
         self.listbox_merge.configure(state="disabled")
+        count = len(self.merge_files)
+        self.label_status_4.configure(text=f"Добавлено файлов: {count}" if count > 0 else "Добавьте минимум 2 файла")
 
     def merge_pdfs(self):
         if len(self.merge_files) < 2:
@@ -566,40 +768,54 @@ class PDFConverterApp(BaseWindow):
                     writer.add_page(page)
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_4.configure(text="Успешно объединены!")
+            self.label_status_4.configure(text="✓ Успешно объединены!", text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"Файлы объединены в:\n{output_path}")
             self.clear_merge_files()
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: СЖАТЬ ====================
+    # ==================== СЖАТЬ ====================
     def create_compress_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Сжать PDF", "Уменьшение размера файла")
         self.frames["compress"] = frame
 
-        ctk.CTkLabel(frame, text="Сжатие PDF файлов", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        
-        self.mode_comp = ctk.CTkSegmentedButton(frame, values=["Один файл", "Вся папка"], command=self.toggle_comp_mode)
-        self.mode_comp.pack(pady=5)
+        top_bar = ctk.CTkFrame(frame, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=(0, 10))
+        ctk.CTkLabel(top_bar, text="Режим:", font=FONT,
+                     text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 10))
+        self.mode_comp = self._create_segmented_button(top_bar, ["Один файл", "Вся папка"], self.toggle_comp_mode)
+        self.mode_comp.pack(side="left")
         self.mode_comp.set("Один файл")
 
-        self.entry_compress = ctk.CTkEntry(frame, width=600, placeholder_text="Выберите файл или папку...")
-        self.entry_compress.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=self.browse_compress).pack(pady=5)
-        ctk.CTkButton(frame, text="Сжать", command=self.start_compress, fg_color="teal", hover_color="darkgreen", height=40, width=200).pack(pady=15)
+        self.entry_compress = self._create_entry(frame, placeholder="Выберите файл или папку...")
+        self.entry_compress.pack(pady=(0, 8), padx=20, fill="x")
 
-        self.progress_comp = ctk.CTkProgressBar(frame, width=600)
-        self.progress_comp.pack(pady=5)
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", self.browse_compress, COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "📉 Сжать", self.start_compress, COLORS["accent_coral"], 120).pack(side="left", padx=5)
+
+        self.progress_comp = ctk.CTkProgressBar(frame, width=460, height=6,
+                                                corner_radius=RADIUS["pill"],
+                                                progress_color=COLORS["accent_coral"])
+        self.progress_comp.pack(pady=(0, 6))
         self.progress_comp.set(0)
-        self.label_status_compress = ctk.CTkLabel(frame, text="")
-        self.label_status_compress.pack(pady=5)
+
+        self.label_status_compress = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                  text_color=COLORS["text_secondary"])
+        self.label_status_compress.pack()
+
+        self._create_info_bar(frame, "💡 Оптимизирует структуру файла и удаляет мусор")
 
     def toggle_comp_mode(self, value):
         self.entry_compress.delete(0, "end")
         self.entry_compress.configure(placeholder_text="Выберите папку..." if value == "Вся папка" else "Выберите файл...")
 
     def browse_compress(self):
-        path = filedialog.askopenfilename(filetypes=[("PDF файлы", "*.pdf")]) if self.mode_comp.get() == "Один файл" else filedialog.askdirectory(title="Выберите папку с PDF файлами")
+        if self.mode_comp.get() == "Один файл":
+            path = filedialog.askopenfilename(filetypes=[("PDF файлы", "*.pdf")])
+        else:
+            path = filedialog.askdirectory(title="Выберите папку с PDF файлами")
         if path:
             self.entry_compress.delete(0, "end")
             self.entry_compress.insert(0, path)
@@ -611,11 +827,17 @@ class PDFConverterApp(BaseWindow):
             return
         if self.mode_comp.get() == "Один файл":
             out_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF файлы", "*.pdf")])
-            if not out_path: return
+            if not out_path:
+                return
+            self.label_status_compress.configure(text="⏳ Сжатие...")
+            self.progress_comp.set(0.5)
             threading.Thread(target=self._run_single_compress, args=(path, out_path), daemon=True).start()
         else:
             out_dir = filedialog.askdirectory(title="Куда сохранить сжатые файлы?")
-            if not out_dir: return
+            if not out_dir:
+                return
+            self.label_status_compress.configure(text="⏳ Пакетная обработка...")
+            self.progress_comp.set(0)
             threading.Thread(target=self._run_batch_compress, args=(path, out_dir), daemon=True).start()
 
     def _single_compress_logic(self, in_path, out_path):
@@ -625,46 +847,57 @@ class PDFConverterApp(BaseWindow):
 
     def _run_single_compress(self, in_path, out_path):
         try:
-            self.after(0, lambda: self.label_status_compress.configure(text="Сжатие..."))
-            self.after(0, lambda: self.progress_comp.set(0.5))
             self._single_compress_logic(in_path, out_path)
             orig = os.path.getsize(in_path) / 1024
             comp = os.path.getsize(out_path) / 1024
             pct = (1 - comp / orig) * 100 if orig > 0 else 0
             self.after(0, lambda: self.progress_comp.set(1.0))
-            self.after(0, lambda: self.label_status_compress.configure(text=f"Сжато! Экономия: {pct:.1f}%"))
-            self.after(0, lambda: messagebox.showinfo("Успех", f"Было: {orig:.1f} КБ\nСтало: {comp:.1f} КБ\nЭкономия: {pct:.1f}%"))
+            self.after(0, lambda p=pct: self.label_status_compress.configure(
+                text=f"✓ Сжато! Экономия: {p:.1f}%", text_color=COLORS["success"]))
+            self.after(0, lambda o=orig, c=comp, p=pct: messagebox.showinfo(
+                "Успех", f"Было: {o:.1f} КБ\nСтало: {c:.1f} КБ\nЭкономия: {p:.1f}%"))
         except Exception as e:
-            self.after(0, lambda: self.label_status_compress.configure(text="Ошибка!"))
-            self.after(0, lambda: messagebox.showerror("Ошибка", str(e)))
+            err_text = str(e)
+            self.after(0, lambda: self.label_status_compress.configure(text="✗ Ошибка!", text_color=COLORS["accent_coral"]))
+            self.after(0, lambda t=err_text: messagebox.showerror("Ошибка", t))
 
     def _run_batch_compress(self, in_dir, out_dir):
         def update_progress(current, total, filename):
-            self.after(0, lambda p=current/total, c=current, t=total, f=filename: self._update_batch_ui_comp(p, c, t, f))
-        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".pdf", self._single_compress_logic, update_progress)
+            self.after(0, lambda p=current/total, c=current, t=total, f=filename:
+                       self._update_batch_ui_comp(p, c, t, f))
+        success, errors = BatchProcessor.process_folder(in_dir, out_dir, ".pdf", ".pdf",
+                                                        self._single_compress_logic, update_progress)
         self.after(0, lambda s=success, e=errors, d=out_dir: self._finish_batch_comp(s, e, d))
 
     def _update_batch_ui_comp(self, percent, current, total, filename):
         self.progress_comp.set(percent)
-        self.label_status_compress.configure(text=f"Файл {current} из {total}: {filename}")
+        self.label_status_compress.configure(text=f"📄 Файл {current}/{total}: {filename}")
 
     def _finish_batch_comp(self, success, errors, out_dir):
         self.progress_comp.set(1.0)
-        self.label_status_compress.configure(text=f"Готово! Успешно: {success}, Ошибок: {errors}")
-        messagebox.showinfo("Пакетная обработка", f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
+        self.label_status_compress.configure(text=f"✓ Готово! Успешно: {success}, Ошибок: {errors}",
+                                             text_color=COLORS["success"])
+        messagebox.showinfo("Пакетная обработка",
+                            f"Готово!\nУспешно: {success}\nС ошибками: {errors}\n\nПапка: {out_dir}")
 
-    # ==================== ФРЕЙМ: ПАРОЛЬ ====================
+    # ==================== ПАРОЛЬ ====================
     def create_protect_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Защита паролем", "Шифрование PDF")
         self.frames["protect"] = frame
 
-        ctk.CTkLabel(frame, text="Защита PDF паролем", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_protect = ctk.CTkEntry(frame, width=600)
-        self.entry_protect.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_protect)).pack(pady=5)
-        ctk.CTkButton(frame, text="Защитить", command=self.protect_pdf, fg_color="darkred", hover_color="red", height=40, width=200).pack(pady=15)
-        self.label_status_protect = ctk.CTkLabel(frame, text="")
-        self.label_status_protect.pack(pady=5)
+        self.entry_protect = self._create_entry(frame)
+        self.entry_protect.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", lambda: self._browse_generic(self.entry_protect), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🛡 Защитить", self.protect_pdf, COLORS["accent_coral"], 140).pack(side="left", padx=5)
+
+        self.label_status_protect = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                 text_color=COLORS["text_secondary"])
+        self.label_status_protect.pack(pady=(5, 15))
+
+        self._create_info_bar(frame, "🔒 Использует 128-битное шифрование")
 
     def protect_pdf(self):
         pdf_path = self.entry_protect.get()
@@ -684,28 +917,33 @@ class PDFConverterApp(BaseWindow):
             writer.encrypt(user_password=password, owner_password=password, use_128bit=True)
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_protect.configure(text="Защищено!")
+            self.label_status_protect.configure(text="✓ Защищено!", text_color=COLORS["success"])
             messagebox.showinfo("Успех", "PDF защищён паролем!")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: ИЗВЛЕЧЬ ====================
+    # ==================== ИЗВЛЕЧЬ ====================
     def create_extract_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Извлечь страницы", "По диапазону")
         self.frames["extract"] = frame
 
-        ctk.CTkLabel(frame, text="Извлечение страниц по диапазону", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_extract = ctk.CTkEntry(frame, width=600)
-        self.entry_extract.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_extract)).pack(pady=5)
-        
-        ctk.CTkLabel(frame, text="Какие страницы извлечь? (Например: 1-5, 8, 12-15)", font=("Arial", 12)).pack(pady=(10, 0))
-        self.entry_range_extract = ctk.CTkEntry(frame, width=300, placeholder_text="1-3, 5, 8-10")
-        self.entry_range_extract.pack(pady=5)
-        
-        ctk.CTkButton(frame, text="Извлечь страницы", command=self.extract_pages, fg_color="#FF8C00", hover_color="#CC7000", height=40, width=200).pack(pady=15)
-        self.label_status_extract = ctk.CTkLabel(frame, text="")
-        self.label_status_extract.pack(pady=5)
+        self.entry_extract = self._create_entry(frame)
+        self.entry_extract.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame1 = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame1.pack(pady=(0, 8))
+        self._create_pill_button(btn_frame1, "📁 Обзор", lambda: self._browse_generic(self.entry_extract), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+
+        ctk.CTkLabel(frame, text="Какие страницы извлечь? (Например: 1-5, 8, 12-15)",
+                     font=FONT_SMALL, text_color=COLORS["text_secondary"]).pack(pady=(5, 3))
+        self.entry_range_extract = self._create_entry(frame, width=300, placeholder="1-3, 5, 8-10")
+        self.entry_range_extract.pack(pady=(0, 8))
+
+        self._create_pill_button(frame, "📑 Извлечь страницы", self.extract_pages, COLORS["accent_yellow"], 180).pack(pady=(0, 12))
+
+        self.label_status_extract = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                 text_color=COLORS["text_secondary"])
+        self.label_status_extract.pack(pady=(0, 15))
 
     def extract_pages(self):
         pdf_path = self.entry_extract.get()
@@ -731,35 +969,54 @@ class PDFConverterApp(BaseWindow):
                 writer.add_page(reader.pages[idx])
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_extract.configure(text=f"Извлечено {len(indices)} страниц!")
+            self.label_status_extract.configure(text=f"✓ Извлечено {len(indices)} страниц!",
+                                                text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"Извлечено {len(indices)} страниц из {total_pages}.\n\nСохранено:\n{output_path}")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: ПОВЕРНУТЬ ====================
+    # ==================== ПОВЕРНУТЬ ====================
     def create_rotate_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Повернуть страницы", "Изменение ориентации")
         self.frames["rotate"] = frame
 
-        ctk.CTkLabel(frame, text="Поворот страниц PDF", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_rotate = ctk.CTkEntry(frame, width=600)
-        self.entry_rotate.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_rotate)).pack(pady=5)
-        
-        frame_opts = ctk.CTkFrame(frame, fg_color="transparent")
-        frame_opts.pack(pady=10)
-        ctk.CTkLabel(frame_opts, text="Угол поворота:").grid(row=0, column=0, padx=5)
-        self.combo_angle = ctk.CTkComboBox(frame_opts, values=["90° (по часовой)", "180°", "270° (против часовой)"])
-        self.combo_angle.grid(row=0, column=1, padx=5)
-        self.combo_angle.set("90° (по часовой)")
-        
-        ctk.CTkLabel(frame, text="Какие страницы повернуть? (Оставьте пустым для ВСЕХ)", font=("Arial", 12)).pack(pady=(10, 0))
-        self.entry_range_rotate = ctk.CTkEntry(frame, width=300, placeholder_text="Все, или 1-3, 5")
-        self.entry_range_rotate.pack(pady=5)
-        
-        ctk.CTkButton(frame, text="Повернуть", command=self.rotate_pages, fg_color="#2E8B57", hover_color="#246B43", height=40, width=200).pack(pady=15)
-        self.label_status_rotate = ctk.CTkLabel(frame, text="")
-        self.label_status_rotate.pack(pady=5)
+        self.entry_rotate = self._create_entry(frame)
+        self.entry_rotate.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame1 = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame1.pack(pady=(0, 8))
+        self._create_pill_button(btn_frame1, "📁 Обзор", lambda: self._browse_generic(self.entry_rotate), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+
+        opts_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        opts_frame.pack(pady=(5, 5))
+        ctk.CTkLabel(opts_frame, text="Угол:", font=FONT,
+                     text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 10))
+        self.combo_angle = ctk.CTkComboBox(
+            opts_frame,
+            values=["90°", "180°", "270°"],
+            fg_color=COLORS["bg_page"],
+            border_color=COLORS["text_secondary"],
+            button_color=COLORS["accent_coral"],
+            button_hover_color=self._darken_color(COLORS["accent_coral"]),
+            dropdown_fg_color=COLORS["bg_page"],
+            dropdown_hover_color=COLORS["bg_card_light"],
+            text_color=COLORS["text_primary"],
+            font=FONT, dropdown_font=FONT,
+            width=100, height=32
+        )
+        self.combo_angle.pack(side="left")
+        self.combo_angle.set("90°")
+
+        ctk.CTkLabel(frame, text="Какие страницы? (пусто = все)",
+                     font=FONT_SMALL, text_color=COLORS["text_secondary"]).pack(pady=(8, 3))
+        self.entry_range_rotate = self._create_entry(frame, width=300, placeholder="Все, или 1-3, 5")
+        self.entry_range_rotate.pack(pady=(0, 8))
+
+        self._create_pill_button(frame, "📐 Повернуть", self.rotate_pages, COLORS["accent_coral"], 140).pack(pady=(0, 12))
+
+        self.label_status_rotate = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                text_color=COLORS["text_secondary"])
+        self.label_status_rotate.pack(pady=(0, 15))
 
     def rotate_pages(self):
         pdf_path = self.entry_rotate.get()
@@ -771,12 +1028,10 @@ class PDFConverterApp(BaseWindow):
         output_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF файлы", "*.pdf")])
         if not output_path:
             return
-        if "90" in angle_str:
+        try:
+            angle = int(angle_str.replace("°", ""))
+        except ValueError:
             angle = 90
-        elif "180" in angle_str:
-            angle = 180
-        else:
-            angle = 270
         try:
             reader = PdfReader(pdf_path)
             writer = PdfWriter()
@@ -788,28 +1043,34 @@ class PDFConverterApp(BaseWindow):
                 writer.add_page(page)
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_rotate.configure(text=f"Повернуто {len(indices)} страниц на {angle}°!")
+            self.label_status_rotate.configure(text=f"✓ Повернуто {len(indices)} страниц на {angle}°!",
+                                               text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"Повернуто {len(indices)} страниц на {angle}°.\n\nСохранено:\n{output_path}")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: УДАЛИТЬ ====================
+    # ==================== УДАЛИТЬ ====================
     def create_delete_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Удалить страницы", "Удаление из PDF")
         self.frames["delete"] = frame
 
-        ctk.CTkLabel(frame, text="Удаление страниц из PDF", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_delete = ctk.CTkEntry(frame, width=600)
-        self.entry_delete.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_delete)).pack(pady=5)
-        
-        ctk.CTkLabel(frame, text="Какие страницы УДАЛИТЬ? (Например: 2, 4, 10-15)", font=("Arial", 12), text_color="#FF6347").pack(pady=(10, 0))
-        self.entry_range_delete = ctk.CTkEntry(frame, width=300, placeholder_text="2, 4, 10-15")
-        self.entry_range_delete.pack(pady=5)
-        
-        ctk.CTkButton(frame, text="Удалить страницы", command=self.delete_pages, fg_color="#8B0000", hover_color="#5C0000", height=40, width=200).pack(pady=15)
-        self.label_status_delete = ctk.CTkLabel(frame, text="")
-        self.label_status_delete.pack(pady=5)
+        self.entry_delete = self._create_entry(frame)
+        self.entry_delete.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame1 = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame1.pack(pady=(0, 8))
+        self._create_pill_button(btn_frame1, "📁 Обзор", lambda: self._browse_generic(self.entry_delete), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+
+        ctk.CTkLabel(frame, text="Какие страницы УДАЛИТЬ?",
+                     font=FONT_SMALL, text_color=COLORS["accent_coral"]).pack(pady=(5, 3))
+        self.entry_range_delete = self._create_entry(frame, width=300, placeholder="2, 4, 10-15")
+        self.entry_range_delete.pack(pady=(0, 8))
+
+        self._create_pill_button(frame, "🗑 Удалить страницы", self.delete_pages, COLORS["accent_coral"], 180).pack(pady=(0, 12))
+
+        self.label_status_delete = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                text_color=COLORS["text_secondary"])
+        self.label_status_delete.pack(pady=(0, 15))
 
     def delete_pages(self):
         pdf_path = self.entry_delete.get()
@@ -842,23 +1103,30 @@ class PDFConverterApp(BaseWindow):
                 return
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_delete.configure(text=f"Удалено {deleted_count} страниц!")
+            self.label_status_delete.configure(text=f"✓ Удалено {deleted_count} страниц!",
+                                               text_color=COLORS["success"])
             messagebox.showinfo("Успех", f"Удалено {deleted_count} страниц.\nОсталось: {len(writer.pages)}\n\nСохранено:\n{output_path}")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ФРЕЙМ: НОМЕРА СТРАНИЦ ====================
+    # ==================== НОМЕРА ====================
     def create_numbers_frame(self):
-        frame = ctk.CTkFrame(self.content_area, corner_radius=0)
+        frame = self._create_content_frame("Номера страниц", "Нумерация документа")
         self.frames["numbers"] = frame
 
-        ctk.CTkLabel(frame, text="Добавление номеров страниц", font=("Arial", 18, "bold")).pack(pady=(20, 10))
-        self.entry_numbers = ctk.CTkEntry(frame, width=600)
-        self.entry_numbers.pack(pady=5)
-        ctk.CTkButton(frame, text="Обзор...", command=lambda: self._browse_generic(self.entry_numbers)).pack(pady=5)
-        ctk.CTkButton(frame, text="Добавить номера", command=self.add_page_numbers, fg_color="darkblue", hover_color="navy", height=40, width=200).pack(pady=15)
-        self.label_status_numbers = ctk.CTkLabel(frame, text="")
-        self.label_status_numbers.pack(pady=5)
+        self.entry_numbers = self._create_entry(frame)
+        self.entry_numbers.pack(pady=(0, 8), padx=20, fill="x")
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 12))
+        self._create_pill_button(btn_frame, "📁 Обзор", lambda: self._browse_generic(self.entry_numbers), COLORS["bg_dark"], 120).pack(side="left", padx=5)
+        self._create_pill_button(btn_frame, "🔢 Добавить номера", self.add_page_numbers, COLORS["accent_yellow"], 180).pack(side="left", padx=5)
+
+        self.label_status_numbers = ctk.CTkLabel(frame, text="Готов к работе", font=FONT_SMALL,
+                                                 text_color=COLORS["text_secondary"])
+        self.label_status_numbers.pack(pady=(5, 15))
+
+        self._create_info_bar(frame, "💡 Номера добавляются внизу по центру каждой страницы")
 
     def add_page_numbers(self):
         pdf_path = self.entry_numbers.get()
@@ -883,41 +1151,36 @@ class PDFConverterApp(BaseWindow):
                 writer.add_page(page)
             with open(output_path, "wb") as f:
                 writer.write(f)
-            self.label_status_numbers.configure(text="Номера добавлены!")
+            self.label_status_numbers.configure(text="✓ Номера добавлены!", text_color=COLORS["success"])
             messagebox.showinfo("Успех", "Номера страниц добавлены!")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
-    # ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ====================
+    # ==================== СЛУЖЕБНЫЕ ====================
     def _browse_generic(self, entry_widget):
         filename = filedialog.askopenfilename(filetypes=[("PDF файлы", "*.pdf")])
         if filename:
             entry_widget.delete(0, "end")
             entry_widget.insert(0, filename)
 
-    # ==================== DRAG & DROP ====================
     def on_files_dropped(self, event):
         try:
             files = self.tk.splitlist(event.data)
         except Exception:
             return
         image_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff'}
-        pdf_exts = {'.pdf'}
         images = [f for f in files if os.path.splitext(f)[1].lower() in image_exts]
-        pdfs = [f for f in files if os.path.splitext(f)[1].lower() in pdf_exts]
-        if images and not pdfs:
+        pdfs = [f for f in files if os.path.splitext(f)[1].lower() == '.pdf']
+        if images:
             self.image_files.extend(images)
             self.update_image_listbox()
+        if pdfs:
+            self.merge_files.extend(pdfs)
+            self.update_merge_listbox()
+        if images and not pdfs:
             self.show_frame("images_to_pdf")
         elif pdfs and not images:
-            self.merge_files.extend(pdfs)
-            self.update_merge_listbox()
             self.show_frame("merge")
-        elif images and pdfs:
-            self.image_files.extend(images)
-            self.update_image_listbox()
-            self.merge_files.extend(pdfs)
-            self.update_merge_listbox()
 
 
 if __name__ == "__main__":
