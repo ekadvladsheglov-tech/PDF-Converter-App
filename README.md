@@ -13,7 +13,7 @@
 <!-- Когда добавишь скриншоты в папку screenshots/, раскомментируй и вставь пути -->
 | Конвертация | Инструменты | Страницы |
 | --- | --- | --- |
-| ![Конвертация](screenshots/convert.png) | ![Инструменты](screenshots/tools.png) | ![Страницы](screenshots/pages.png) |
+| ![Установка](screenshots/setup.png) | ![Установка](screenshots/setau2.png) | ![Меню](screenshots/menu.png) |
 
 ## ✨ Возможности
 
