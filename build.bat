@@ -30,8 +30,9 @@ if not exist "app_web.py" (
 )
 
 if not exist "DejaVuSans.ttf" (
-    color 0E & echo WARNING: DejaVuSans.ttf not found! Cyrillic in Word-to-PDF may break.
-    echo Press any key to continue without it... & pause >nul
+    color 0C & echo ERROR: DejaVuSans.ttf not found! Cyrillic will break in Word-to-PDF.
+    echo Please download it and put in the app folder.
+    pause & exit /b
 )
 
 echo [OK] All checks passed.
@@ -68,12 +69,12 @@ if not exist "pdf.ico" (
     python make_icon.py
 )
 
-:: ШАГ 4: СБОРКА EXE
+:: ШАГ 4: СБОРКА EXE (ИСПРАВЛЕНО: убран дубль)
 echo [Step 4/7] Building EXE...
 if exist "pdf.ico" (
-    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." --add-data "pdf.ico;." --icon "pdf.ico" app_web.py > build_log.txt 2>&1
+    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." --add-data "pdf.ico;." --add-data "web;web" --icon "pdf.ico" app_web.py > build_log.txt 2>&1
 ) else (
-    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." app_web.py > build_log.txt 2>&1
+    pyinstaller --clean --noconsole --onefile --name "PDF_Converter" --collect-all pywebview --add-data "DejaVuSans.ttf;." --add-data "web;web" app_web.py > build_log.txt 2>&1
 )
 if %errorlevel% neq 0 (
     color 0C & echo ERROR: PyInstaller failed! See build_log.txt for details. & pause & exit /b
@@ -101,7 +102,6 @@ for %%f in ("Output\*.exe") do set "SETUPFILE=%%f"
 
 if defined SETUPFILE (
     copy /Y "!SETUPFILE!" "%USERPROFILE%\Desktop\PDF_Converter_Setup.exe" >nul
-
     rmdir /s /q build
     rmdir /s /q dist
     rmdir /s /q venv
@@ -109,7 +109,6 @@ if defined SETUPFILE (
     if exist "pip_log.txt" del /q pip_log.txt
     if exist "build_log.txt" del /q build_log.txt
     if exist "inno_log.txt" del /q inno_log.txt
-
     color 0A
     echo.
     echo ==========================================
@@ -119,6 +118,5 @@ if defined SETUPFILE (
 ) else (
     color 0C & echo ERROR: No setup file found in Output folder! Check inno_log.txt
 )
-
 pause
 exit /b

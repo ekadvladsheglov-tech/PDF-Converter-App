@@ -1,0 +1,103 @@
+:root{
+  --bg:#F2F1EE;--card:#fff;--ink:#171717;--muted:#8a8a86;--line:#e7e5e0;
+  --coral:#F2694B;--yellow:#F2E500;--green:#2EBD59;--dark:#171717;--dark3:#2e2e2e;
+  --r:24px;--pill:999px;
+  --sh:0 12px 32px rgba(20,20,20,.07),0 2px 6px rgba(20,20,20,.05);
+  --shc:0 6px 16px rgba(242,105,75,.35)
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);height:100vh;display:flex;gap:16px;padding:16px;overflow:hidden;user-select:none}
+aside{width:232px;background:var(--dark);border-radius:var(--r);padding:22px 12px;display:flex;flex-direction:column;color:#fff;flex:none}
+.logo{display:flex;align-items:center;gap:10px;padding:0 12px 18px}
+.logo i{width:38px;height:38px;border-radius:12px;background:var(--coral);display:grid;place-items:center;font-style:normal;font-size:16px;color:#fff;font-weight:700}
+.logo b{font-size:16px}
+.logo span{display:block;font-size:10px;color:#8b8b88;font-weight:600}
+
+/* ИСПРАВЛЕНИЕ КНОПКИ ОБНОВЛЕНИЯ */
+.nav{flex:1;overflow-y:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+#upd{margin:auto 12px;width:calc(100% - 24px);height:36px;font-size:12px}
+.foot{padding:12px 14px;font-size:11px;color:#757570}
+
+.grp{font-size:10px;font-weight:700;letter-spacing:.14em;color:#757570;margin:14px 14px 6px}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:12px;background:transparent;color:#c9c9c6;font:600 13px 'Segoe UI';cursor:pointer;transition:.15s}
+.nav button:hover{background:var(--dark3);color:#fff}
+.nav button.on{background:var(--coral);color:#fff;box-shadow:var(--shc)}
+.foot em{color:var(--green);font-style:normal}
+
+main{flex:1;display:flex;flex-direction:column;gap:14px;min-width:0}
+header{display:flex;align-items:baseline;gap:12px;padding:6px 8px}
+header h1{font-size:22px}
+header span{font-size:12px;color:var(--muted);font-weight:600}
+.grid{flex:1;display:grid;grid-template-columns:1fr 300px;gap:16px;min-height:0}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:26px 28px;animation:rise .3s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.panel{overflow:auto;display:flex;flex-direction:column;gap:14px;position:relative}
+.right{display:flex;flex-direction:column;gap:16px;overflow:auto}
+.right .card{padding:20px 22px}
+.lbl{font-size:12px;font-weight:600;color:var(--muted)}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.seg{display:inline-flex;background:#EDECE8;border-radius:var(--pill);padding:4px}
+.seg button{border:0;background:transparent;padding:8px 18px;border-radius:var(--pill);color:var(--muted);font:600 13px 'Segoe UI';cursor:pointer;transition:.15s}
+.seg button.on{background:var(--coral);color:#fff;box-shadow:var(--shc)}
+
+input,select{width:100%;height:46px;border:1px solid var(--line);border-radius:var(--pill);padding:0 20px;font:400 13px 'Segoe UI';background:#FBFBFA;color:var(--ink);transition:.15s}
+input:focus,select:focus{outline:none;border-color:var(--coral);box-shadow:0 0 0 4px rgba(242,105,75,.15)}
+select{width:auto;padding-right:36px}
+
+/* ЗОНА DRAG & DROP */
+.dropzone {
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: #FBFBFA;
+  margin-top: 15px;
+  transition: 0.2s;
+  cursor: pointer;
+  font-size: 13px;
+}
+.dropzone.dragover { border-color: var(--coral); background: rgba(242,105,75,.05); color: var(--coral); }
+.dropzone b { color: var(--ink); display: block; margin-bottom: 6px; font-size: 15px;}
+
+/* ЛОАДЕР В КНОПКЕ */
+.btn{position:relative;border:0;border-radius:var(--pill);height:42px;padding:0 26px;font:700 13px 'Segoe UI';cursor:pointer;transition:.15s;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.loading{color:transparent!important;pointer-events:none}
+.btn.loading::after {
+  content:""; position:absolute; width:20px; height:20px;
+  border:3px solid rgba(255,255,255,.3); border-top-color:#fff;
+  border-radius:50%; animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;pointer-events:none}
+.btn.primary{background:var(--coral);color:#fff;box-shadow:var(--shc)}
+.btn.primary:hover{box-shadow:0 10px 24px rgba(242,105,75,.45)}
+.btn.dark{background:var(--dark);color:#fff}
+.btn.ghost{background:#EDECE8;color:var(--ink)}
+.btn.yellow{background:var(--yellow);color:var(--ink)}
+
+.progress{height:8px;background:#EDECE8;border-radius:var(--pill);overflow:hidden}
+.progress i{display:block;height:100%;width:0;border-radius:var(--pill);background:linear-gradient(90deg,var(--coral),#ff9068);transition:width .25s}
+.status{font-size:12px;color:var(--muted);font-weight:600}
+.status.ok{color:var(--green)}
+.status.err{color:var(--coral)}
+.listbox{min-height:120px;max-height:200px;overflow:auto;border:1px dashed var(--line);border-radius:16px;padding:12px 16px;font-size:12px;color:var(--muted);background:#FBFBFA}
+.stat{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0}
+.stat b{font-size:22px}
+.stat span{font-size:11px;color:var(--muted);font-weight:600}
+.tips{font-size:12px;color:var(--muted);line-height:1.5}
+.recent{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.recent div{display:flex;gap:8px;align-items:center;cursor:pointer;padding:4px;border-radius:6px;transition:.15s}
+.recent div:hover{background:#F5F5F3;color:var(--ink)}
+.recent div::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--coral);flex:none}
+
+/* КАРТОЧКА ГОРЯЧИХ КЛАВИШ */
+.hotkey {font-size:11px; color:var(--muted); display:flex; align-items:center; gap:4px; margin-bottom:4px;}
+kbd {background:#F5F5F3; border:1px solid var(--line); border-radius:4px; padding:2px 6px; font-family:monospace; font-size:10px; color:var(--ink);}
+
+.toast{position:fixed;right:24px;bottom:24px;background:var(--dark);color:#fff;border-radius:16px;padding:14px 20px;font:600 13px 'Segoe UI';box-shadow:0 16px 40px rgba(0,0,0,.25);animation:rise .25s ease both;display:flex;gap:10px;align-items:center;z-index:999}
+.toast.err{background:var(--coral)}

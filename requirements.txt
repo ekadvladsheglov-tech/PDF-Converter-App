@@ -1,8 +1,8 @@
-pywebview
-pdf2docx
-python-docx
-PyPDF2
-reportlab
-Pillow
-pymupdf
-pyinstaller
+pywebview>=4.0,<6.0
+pdf2docx>=0.5.6,<0.6.0
+python-docx>=1.0.0,<2.0.0
+pypdf>=3.17.0,<5.0.0
+reportlab>=4.0.0,<5.0.0
+Pillow>=10.0.0,<11.0.0
+pymupdf>=1.23.0,<1.25.0
+pyinstaller>=6.0.0,<7.0.0

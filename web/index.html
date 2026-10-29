@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>PDF Tools</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside>
+  <div class="logo"><i>P</i><div><b>PDF Tools</b><span id="ver">v3.1.1</span></div></div>
+  <div class="nav" id="nav"></div>
+  <button class="btn ghost" id="upd">🔄 Проверить обновления</button>
+  <div class="foot"><em>✓</em> Локально &nbsp; <em>✓</em> Безопасно</div>
+</aside>
+<main>
+  <header><h1 id="ttl"></h1><span id="sub"></span></header>
+  <div class="grid">
+    <section class="card panel" id="panel">
+        <!-- Сюда рендерится JS -->
+    </section>
+    <div class="right">
+      <div class="card">
+        <div class="stat"><b id="s1">0</b><span>операций</span></div>
+        <div class="stat"><b id="s2">0</b><span>успешных</span></div>
+      </div>
+      <div class="card">
+        <div class="lbl" style="margin-bottom:8px">Подсказка</div>
+        <div class="tips" id="tips"></div>
+      </div>
+      <div class="card">
+        <div class="lbl" style="margin-bottom:8px">Недавние</div>
+        <div class="recent" id="rec"><div>пока пусто</div></div>
+      </div>
+      <!-- НОВЫЕ КАРТОЧКИ -->
+      <div class="card info-card">
+        <div class="lbl" style="margin-bottom:8px">Горячие клавиши</div>
+        <div class="hotkey"><kbd>Ctrl</kbd> + <kbd>O</kbd> Открыть</div>
+        <div class="hotkey"><kbd>Enter</kbd> Запустить</div>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
