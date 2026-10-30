@@ -101,7 +101,6 @@ class Api:
                 except TypeError:
                     r = WIN.create_file_dialog(FD.OPEN, file_types=(f'{name} ({mask})',))
             else:
-                # ИСПРАВЛЕНО: используем allow_multiple для совместимости с новыми версиями pywebview
                 r = WIN.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=multi, file_types=(f'{name} ({mask})',))
                 
             if not r: 
@@ -158,7 +157,10 @@ class Api:
                     done += len(chunk)
                     if total: js(f'UI.prog({done/total}, "Загрузка… {done//1048576} МБ")')
             js('UI.prog(1, "Запуск…")')
-            subprocess.Popen([tmp], shell=False)
+            
+            # ИСПРАВЛЕНИЕ: запуск через explorer.exe, чтобы избежать ошибки Failed to load Python DLL
+            subprocess.Popen(['explorer.exe', tmp], shell=False)
+            
             WIN.destroy()
             return {'ok': True}
         except Exception as e:
@@ -461,7 +463,6 @@ if __name__ == '__main__':
             min_size=(1000, 660),
             background_color='#F2F1EE'
         )
-        # debug=True позволит открыть консоль разработчика по F12, если что-то пойдет не так
         webview.start(debug=True)
     except Exception as e:
         import traceback

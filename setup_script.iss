@@ -1,5 +1,5 @@
 #define MyAppName "PDF Converter"
-#define MyAppVersion "3.1.0"
+#define MyAppVersion "3.1.1"
 #define MyAppExeName "PDF_Converter.exe"
 
 [Setup]
