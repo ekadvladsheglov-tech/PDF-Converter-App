@@ -145,9 +145,9 @@ class Api:
 
     def do_update(self, url):
         try:
-            tmp = os.path.join(tempfile.gettempdir(), 'PDF_Converter_Update.exe')
+            tmp_exe = os.path.join(tempfile.gettempdir(), 'PDF_Converter_Update.exe')
             req = urllib.request.Request(url, headers={'User-Agent': 'PDFConverter'})
-            with urllib.request.urlopen(req, timeout=20) as r, open(tmp, 'wb') as f:
+            with urllib.request.urlopen(req, timeout=20) as r, open(tmp_exe, 'wb') as f:
                 total = int(r.headers.get('Content-Length') or 0)
                 done = 0
                 while True:
@@ -156,10 +156,19 @@ class Api:
                     f.write(chunk)
                     done += len(chunk)
                     if total: js(f'UI.prog({done/total}, "Загрузка… {done//1048576} МБ")')
-            js('UI.prog(1, "Запуск…")')
             
-            # ИСПРАВЛЕНИЕ: запуск через explorer.exe, чтобы избежать ошибки Failed to load Python DLL
-            subprocess.Popen(['explorer.exe', tmp], shell=False)
+            js('UI.prog(1, "Подготовка к установке…")')
+            
+            # ИСПРАВЛЕНИЕ: Используем bat-файл как прослойку для безопасного обновления
+            bat_path = os.path.join(tempfile.gettempdir(), 'run_update.bat')
+            with open(bat_path, 'w', encoding='utf-8') as b:
+                b.write('@echo off\n')
+                b.write('timeout /t 2 /nobreak > NUL\n')   # Ждем 2 секунды, чтобы старый _MEI освободился
+                b.write(f'start "" "{tmp_exe}"\n')        # Запускаем установщик
+                b.write('del "%~f0"\n')                   # Удаляем bat-файл после запуска
+            
+            # Запускаем bat-файл скрыто (без черного окна консоли)
+            subprocess.Popen(['cmd.exe', '/c', bat_path], creationflags=subprocess.CREATE_NO_WINDOW)
             
             WIN.destroy()
             return {'ok': True}
